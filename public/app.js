@@ -20,6 +20,7 @@ let extintorModalInstance = null;
 let novaVistoriaModalInstance = null;
 let vistoriaDetailsModalInstance = null;
 let usuarioModalInstance = null;
+let tipoModalInstance = null;
 
 // ====== INIT ======
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   novaVistoriaModalInstance = new bootstrap.Modal(document.getElementById('novaVistoriaModal'));
   vistoriaDetailsModalInstance = new bootstrap.Modal(document.getElementById('vistoriaDetailsModal'));
   usuarioModalInstance = new bootstrap.Modal(document.getElementById('usuarioModal'));
+  tipoModalInstance = new bootstrap.Modal(document.getElementById('tipoModal'));
 
   bindStaticEvents();
   checkAuth();
@@ -109,6 +111,10 @@ function bindStaticEvents() {
   document.getElementById('btnGerarPDF').addEventListener('click', gerarPDF);
   document.getElementById('btnReabrirVistoria').addEventListener('click', reabrirVistoria);
 
+  // Admin - Tipos
+  document.getElementById('btnNovoTipo').addEventListener('click', openNewTipoModal);
+  document.getElementById('btnSalvarTipo').addEventListener('click', saveTipo);
+
   // Admin - Usuarios
   document.getElementById('btnNovoUsuario').addEventListener('click', openNewUsuarioModal);
   document.getElementById('btnSalvarUsuario').addEventListener('click', saveUsuario);
@@ -190,7 +196,7 @@ function switchTab(tab) {
     loadVistoriasAtivas();
   }
   if (tab === 'historico') loadHistorico();
-  if (tab === 'admin' && currentUser.role === 'admin') loadUsuarios();
+  if (tab === 'admin' && currentUser.role === 'admin') { loadUsuarios(); loadTipos(); }
 }
 
 // ====== API HELPERS ======
@@ -415,17 +421,29 @@ function renderExtintores(extintores) {
   `).join('');
 }
 
-function openNewExtintorModal() {
+async function openNewExtintorModal() {
   document.getElementById('extintorId').value = '';
   document.getElementById('extintorForm').reset();
   document.getElementById('extintorModalLabel').innerHTML = '<i class="bi bi-fire me-2"></i>Novo Extintor';
+  await loadTiposSelect();
   extintorModalInstance.show();
 }
 
-function openEditExtintorModal(id) {
+async function loadTiposSelect(selectedValue = '') {
+  try {
+    const res = await apiFetch('/api/tipos');
+    const tipos = await res.json();
+    const sel = document.getElementById('fTipo');
+    sel.innerHTML = '<option value="">-- Selecione o tipo --</option>' +
+      tipos.map(t => `<option value="${escHtml(t.nome)}" ${t.nome === selectedValue ? 'selected' : ''}>${escHtml(t.nome)}</option>`).join('');
+  } catch { /* ignore */ }
+}
+
+async function openEditExtintorModal(id) {
   const e = allExtintores.find(x => x.id === id);
   if (!e) return;
 
+  await loadTiposSelect(e.tipo || '');
   document.getElementById('extintorId').value = e.id;
   document.getElementById('fTorrePavAnexo').value = e.torre_pav_anexo || '';
   document.getElementById('fTipo').value = e.tipo || '';
@@ -1444,6 +1462,87 @@ async function deleteUsuario(id, name) {
     'Excluir',
     'btn-danger'
   );
+}
+
+// ====== TIPOS DE EXTINTOR ======
+async function loadTipos() {
+  const tbody = document.getElementById('tiposBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center py-3 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Carregando...</td></tr>';
+  try {
+    const res = await apiFetch('/api/tipos');
+    const data = await res.json();
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Nenhum tipo cadastrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td><strong>${escHtml(t.nome)}</strong></td>
+        <td class="text-center" style="white-space:nowrap">
+          <button class="btn btn-outline-primary btn-action me-1" onclick="openEditTipoModal(${t.id}, '${escHtml(t.nome)}')" title="Editar">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-action" onclick="deleteTipo(${t.id}, '${escHtml(t.nome)}')" title="Excluir">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    if (err.message !== 'Não autenticado')
+      tbody.innerHTML = '<tr><td colspan="3" class="text-danger text-center py-3">Erro ao carregar.</td></tr>';
+  }
+}
+
+function openNewTipoModal() {
+  document.getElementById('tipoId').value = '';
+  document.getElementById('tipoNome').value = '';
+  document.getElementById('tipoModalLabel').innerHTML = '<i class="bi bi-tag me-2"></i>Novo Tipo de Extintor';
+  tipoModalInstance.show();
+}
+
+function openEditTipoModal(id, nome) {
+  document.getElementById('tipoId').value = id;
+  document.getElementById('tipoNome').value = nome;
+  document.getElementById('tipoModalLabel').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Tipo';
+  tipoModalInstance.show();
+}
+
+async function saveTipo() {
+  const id = document.getElementById('tipoId').value;
+  const nome = document.getElementById('tipoNome').value.trim();
+  if (!nome) { showToast('Nome é obrigatório', 'error'); return; }
+
+  const url = id ? `/api/tipos/${id}` : '/api/tipos';
+  const method = id ? 'PUT' : 'POST';
+  try {
+    const res = await apiFetch(url, { method, body: JSON.stringify({ nome }) });
+    const data = await res.json();
+    if (res.ok) {
+      tipoModalInstance.hide();
+      showToast(id ? 'Tipo atualizado!' : 'Tipo cadastrado!', 'success');
+      loadTipos();
+    } else {
+      showToast(data.error || 'Erro ao salvar', 'error');
+    }
+  } catch (err) {
+    if (err.message !== 'Não autenticado') showToast('Erro de conexão', 'error');
+  }
+}
+
+async function deleteTipo(id, nome) {
+  confirmDialog(`Excluir o tipo "${nome}"?`, async () => {
+    try {
+      const res = await apiFetch(`/api/tipos/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) { showToast('Tipo excluído!', 'success'); loadTipos(); }
+      else showToast(data.error || 'Erro ao excluir', 'error');
+    } catch (err) {
+      if (err.message !== 'Não autenticado') showToast('Erro de conexão', 'error');
+    }
+  }, 'Excluir', 'btn-danger');
 }
 
 // ====== PDF DE TODOS OS EXTINTORES ======

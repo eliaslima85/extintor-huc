@@ -1,35 +1,49 @@
-const { DatabaseSync } = require('node:sqlite');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'extintor_huc.db');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-let db;
-
-function getDB() {
-  if (!db) {
-    db = new DatabaseSync(DB_PATH);
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA foreign_keys = ON');
-  }
-  return db;
+// Convert ? placeholders to $1, $2, ...
+function pg(sql) {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
 }
 
-function initDB() {
-  const database = getDB();
+async function dbGet(sql, params = []) {
+  const result = await pool.query(pg(sql), params);
+  return result.rows[0] || null;
+}
 
-  database.exec(`
+async function dbAll(sql, params = []) {
+  const result = await pool.query(pg(sql), params);
+  return result.rows;
+}
+
+async function dbRun(sql, params = []) {
+  const isInsert = sql.trim().toUpperCase().startsWith('INSERT');
+  const finalSql = isInsert ? sql + ' RETURNING id' : sql;
+  const result = await pool.query(pg(finalSql), params);
+  return { lastInsertRowid: result.rows[0]?.id || null, changes: result.rowCount };
+}
+
+async function initDB() {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       username TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'inspector',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS extintores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       torre_pav_anexo TEXT,
       tipo TEXT,
       local TEXT,
@@ -45,46 +59,67 @@ function initDB() {
       sinalizacao_horizontal TEXT,
       placas_corretas TEXT,
       observacoes TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS vistorias (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       titulo TEXT NOT NULL,
       inspector_name TEXT NOT NULL,
       user_id INTEGER,
       status TEXT NOT NULL DEFAULT 'em_andamento',
-      started_at TEXT NOT NULL DEFAULT (datetime('now')),
-      finished_at TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
       FOREIGN KEY (user_id) REFERENCES users(id)
-    );
+    )
+  `);
 
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS vistoria_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       vistoria_id INTEGER NOT NULL,
       extintor_id INTEGER NOT NULL,
       resultado TEXT NOT NULL,
       observacoes TEXT,
       inspector_name TEXT,
-      inspected_at TEXT NOT NULL DEFAULT (datetime('now')),
+      inspected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       FOREIGN KEY (vistoria_id) REFERENCES vistorias(id),
       FOREIGN KEY (extintor_id) REFERENCES extintores(id)
-    );
+    )
   `);
 
-  // Create default admin if not exists
-  const adminExists = database.prepare("SELECT id FROM users WHERE username = 'admin'").get();
-  if (!adminExists) {
-    const hashed = bcrypt.hashSync('1223', 10);
-    database.prepare(
-      "INSERT INTO users (name, username, password, role) VALUES (?, ?, ?, ?)"
-    ).run('Administrador', 'admin', hashed, 'admin');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tipos_extintor (
+      id SERIAL PRIMARY KEY,
+      nome TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // Default tipos
+  const tiposDefault = ['CO2 4kg', 'CO2 6kg', 'PQS 4kg', 'PQS 6kg', 'Água 10L', 'Espuma 10L'];
+  for (const t of tiposDefault) {
+    await pool.query(
+      'INSERT INTO tipos_extintor (nome) VALUES ($1) ON CONFLICT (nome) DO NOTHING',
+      [t]
+    );
+  }
+
+  // Default admin user
+  const adminRow = await pool.query("SELECT id FROM users WHERE username = 'admin'");
+  if (adminRow.rows.length === 0) {
+    const hashed = await bcrypt.hash('1223', 10);
+    await pool.query(
+      'INSERT INTO users (name, username, password, role) VALUES ($1, $2, $3, $4)',
+      ['Administrador', 'admin', hashed, 'admin']
+    );
     console.log('Default admin user created (username: admin, password: 1223)');
   }
 
   console.log('Database initialized successfully.');
-  return database;
 }
 
-module.exports = { getDB, initDB };
+module.exports = { pool, dbGet, dbAll, dbRun, initDB };

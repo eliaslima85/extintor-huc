@@ -309,6 +309,34 @@
           </div>
         </div>
 
+        <!-- Tipos de Extintor -->
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-tags me-1"></i>Tipos de Extintor</span>
+            <button class="btn btn-danger btn-sm" id="btnNovoTipo">
+              <i class="bi bi-plus-lg me-1"></i>Novo Tipo
+            </button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover mb-0">
+                <thead class="table-dark">
+                  <tr>
+                    <th>ID</th>
+                    <th>Nome do Tipo</th>
+                    <th class="text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="tiposBody">
+                  <tr><td colspan="3" class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Carregando...
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <!-- Change My Password -->
         <div class="card shadow-sm">
           <div class="card-header bg-light fw-semibold">
@@ -373,14 +401,9 @@
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-semibold">TIPO DO EXTINTOR</label>
-                <input type="text" id="fTipo" class="form-control" list="tipoList" placeholder="Ex: PQS, CO2, Água" />
-                <datalist id="tipoList">
-                  <option value="Pó Químico Seco (PQS)" />
-                  <option value="CO2 (Gás Carbônico)" />
-                  <option value="Água Pressurizada" />
-                  <option value="Espuma Mecânica" />
-                  <option value="Água com Aditivo" />
-                </datalist>
+                <select id="fTipo" class="form-select">
+                  <option value="">-- Selecione o tipo --</option>
+                </select>
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-semibold">LOCAL</label>
@@ -566,6 +589,31 @@
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button type="button" class="btn btn-danger fw-bold" id="btnSalvarUsuario">
             <span id="btnSalvarUsuarioSpinner" class="spinner-border spinner-border-sm me-1 d-none"></span>
+            <i class="bi bi-save me-1"></i>Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Tipo Extintor -->
+  <div class="modal fade" id="tipoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title" id="tipoModalLabel"><i class="bi bi-tag me-2"></i>Tipo de Extintor</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="tipoId" />
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nome do Tipo <span class="text-danger">*</span></label>
+            <input type="text" id="tipoNome" class="form-control" placeholder="Ex: CO2 6kg, PQS 4kg" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger fw-bold" id="btnSalvarTipo">
             <i class="bi bi-save me-1"></i>Salvar
           </button>
         </div>
