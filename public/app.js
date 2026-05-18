@@ -116,6 +116,26 @@ function bindStaticEvents() {
   // Change Password
   document.getElementById('changePasswordForm').addEventListener('submit', handleChangePassword);
 
+  // Auto-calcular próximas datas
+  document.getElementById('fDataUltimaRecarga').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    const prox = addYears(e.target.value, 1);
+    document.getElementById('fDataProxRecarga').value = prox;
+    autoSetStatus(prox, 'fStatusRecarga');
+  });
+  document.getElementById('fDataUltimoTeste').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    const prox = addYears(e.target.value, 5);
+    document.getElementById('fDataProxTeste').value = prox;
+    autoSetStatus(prox, 'fStatusTeste');
+  });
+  document.getElementById('fDataProxRecarga').addEventListener('change', (e) => {
+    if (e.target.value) autoSetStatus(e.target.value, 'fStatusRecarga');
+  });
+  document.getElementById('fDataProxTeste').addEventListener('change', (e) => {
+    if (e.target.value) autoSetStatus(e.target.value, 'fStatusTeste');
+  });
+
   // PDF de todos os extintores
   document.getElementById('btnPDFExtintores').addEventListener('click', gerarPDFExtintores);
 
@@ -281,6 +301,20 @@ function statusBadge(status, type = 'recarga') {
   const cls = map[status] || 'bg-secondary text-white';
   const label = status === 'conforme' ? 'Conforme' : status === 'nao_conforme' ? 'Não Conforme' : status === 'em_andamento' ? 'Em Andamento' : status === 'finalizada' ? 'Finalizada' : status;
   return `<span class="badge-status ${cls}">${escHtml(label)}</span>`;
+}
+
+function addYears(dateStr, years) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
+
+function autoSetStatus(proxDateStr, selectId) {
+  const prox = new Date(proxDateStr + 'T12:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const em30dias = new Date(today); em30dias.setDate(em30dias.getDate() + 30);
+  let status = prox < today ? 'Vencida' : prox <= em30dias ? 'A vencer' : 'Em dia';
+  document.getElementById(selectId).value = status;
 }
 
 // ====== LOGIN ======
@@ -1222,7 +1256,12 @@ function gerarPDF() {
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     didParseCell: function(data) {
-      if (data.column.index === 5 && data.section === 'body') {
+      if (data.section !== 'body') return;
+      const rowItem = items[data.row.index];
+      if (rowItem && rowItem.resultado === 'nao_conforme') {
+        data.cell.styles.fillColor = [255, 235, 235];
+      }
+      if (data.column.index === 5) {
         if (data.cell.raw === 'CONFORME') {
           data.cell.styles.textColor = [22, 163, 74];
           data.cell.styles.fontStyle = 'bold';
@@ -1500,6 +1539,11 @@ function gerarPDFExtintores() {
       alternateRowStyles: { fillColor: [248, 250, 252] },
       didParseCell(data) {
         if (data.section !== 'body') return;
+        const rowItem = items[data.row.index];
+        // Linha inteira em vermelho claro se tiver algum item vencido
+        if (rowItem && (rowItem.status_recarga === 'Vencida' || rowItem.status_teste === 'Vencida')) {
+          data.cell.styles.fillColor = [255, 235, 235];
+        }
         const val = data.cell.raw;
         if (val === 'Vencida' || val === 'Não Conforme' || val === 'Não') {
           data.cell.styles.textColor = [220, 38, 38];
@@ -1508,6 +1552,7 @@ function gerarPDFExtintores() {
           data.cell.styles.textColor = [22, 163, 74];
         } else if (val === 'A vencer') {
           data.cell.styles.textColor = [161, 98, 7];
+          data.cell.styles.fillColor = [255, 253, 235];
         }
       },
       didDrawPage(data) {
